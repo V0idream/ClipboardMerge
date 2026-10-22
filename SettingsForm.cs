@@ -6,6 +6,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _duration;
     private readonly CheckBox _sound;
     private readonly CheckBox _autoStart;
+    private readonly CheckBox _autoFinishAfterInactivity;
     private readonly ComboBox _separator;
 
     public AppSettings Result { get; private set; }
@@ -20,7 +21,7 @@ internal sealed class SettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(440, 300);
+        ClientSize = new Size(480, 342);
         Font = new Font("Microsoft YaHei UI", 9f);
 
         var layout = new TableLayoutPanel
@@ -28,7 +29,7 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(18),
             ColumnCount = 2,
-            RowCount = 7
+            RowCount = 8
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
@@ -66,6 +67,14 @@ internal sealed class SettingsForm : Form
             Anchor = AnchorStyles.Left
         };
 
+        _autoFinishAfterInactivity = new CheckBox
+        {
+            Text = "60 秒无新复制时自动结束累积（保留已复制内容）",
+            Checked = current.AutoFinishAfterInactivity,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left
+        };
+
         _separator = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -90,6 +99,8 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_separator, 1, 3);
         layout.Controls.Add(_autoStart, 0, 4);
         layout.SetColumnSpan(_autoStart, 2);
+        layout.Controls.Add(_autoFinishAfterInactivity, 0, 5);
+        layout.SetColumnSpan(_autoFinishAfterInactivity, 2);
 
         var hotkeyHelp = new Label
         {
@@ -98,7 +109,7 @@ internal sealed class SettingsForm : Form
             ForeColor = Color.DimGray,
             Anchor = AnchorStyles.Left
         };
-        layout.Controls.Add(hotkeyHelp, 0, 5);
+        layout.Controls.Add(hotkeyHelp, 0, 6);
         layout.SetColumnSpan(hotkeyHelp, 2);
 
         var buttons = new FlowLayoutPanel
@@ -112,7 +123,7 @@ internal sealed class SettingsForm : Form
         save.Click += (_, _) => SaveResult();
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
-        layout.Controls.Add(buttons, 0, 6);
+        layout.Controls.Add(buttons, 0, 7);
         layout.SetColumnSpan(buttons, 2);
 
         Controls.Add(layout);
@@ -126,6 +137,7 @@ internal sealed class SettingsForm : Form
         Result.NotificationMilliseconds = (int)_duration.Value;
         Result.PlaySound = _sound.Checked;
         Result.AutoStart = _autoStart.Checked;
+        Result.AutoFinishAfterInactivity = _autoFinishAfterInactivity.Checked;
         Result.Separator = _separator.SelectedIndex switch
         {
             1 => "\r\n\r\n",

@@ -3,8 +3,10 @@ namespace ClipboardMerge;
 internal sealed class ClipboardApplicationContext : ApplicationContext
 {
     private const string InternalClipboardFormat = "ClipboardMerge.Internal";
+    private const long InactivityTimeoutMilliseconds = 60_000;
     private readonly MessageWindow _window;
     private readonly KeyboardHook _keyboardHook;
+    private readonly System.Windows.Forms.Timer _inactivityTimer;
     private readonly NotifyIcon _trayIcon;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _toggleItem;
@@ -15,6 +17,8 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
 
     private AppSettings _settings;
     private bool _collecting;
+    private long _lastCollectionActivityTick;
+
     public ClipboardApplicationContext()
     {
         _settings = AppSettings.Load();
@@ -23,6 +27,8 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
         StartupManager.SetEnabled(_settings.AutoStart);
 
         _toast = new ToastForm();
+        _inactivityTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _inactivityTimer.Tick += (_, _) => CheckCollectionInactivity();
         _window = new MessageWindow();
         _window.ClipboardChanged += (_, _) => HandleClipboardChanged();
 
@@ -96,6 +102,7 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
         if (_collecting)
         {
             _items.Add(text);
+            ResetInactivityCountdown();
             var merged = string.Join(_settings.Separator, _items);
             SetClipboardTextInternal(merged);
             UpdateTrayState();
@@ -119,27 +126,38 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
     {
         _items.Clear();
         _collecting = true;
+        ResetInactivityCountdown();
+        UpdateInactivityTimer();
         UpdateTrayState();
-        ShowToast("累积复制已开启", "继续使用 Ctrl+C；Ctrl+V 可随时粘贴合并结果。");
+        ShowToast(
+            "累积复制已开启",
+            _settings.AutoFinishAfterInactivity
+                ? "继续 Ctrl+C；60 秒没有新复制将自动结束，保留合并内容。"
+                : "继续使用 Ctrl+C；Ctrl+V 可随时粘贴合并结果。");
     }
 
-    private void FinishCollection()
+    private void FinishCollection(bool automatic = false)
     {
         if (!_collecting)
             return;
 
         _collecting = false;
+        _inactivityTimer.Stop();
         UpdateTrayState();
 
         if (_items.Count > 0)
         {
             var merged = string.Join(_settings.Separator, _items);
             SetClipboardTextInternal(merged);
-            ShowToast("累积复制已结束", $"共 {_items.Count} 条，合并结果已保留在剪贴板。");
+            ShowToast(
+                automatic ? "60 秒未复制，已自动结束" : "累积复制已结束",
+                $"共 {_items.Count} 条，合并结果已保留在剪贴板。");
         }
         else
         {
-            ShowToast("累积复制已结束", "本次没有收集到文本。");
+            ShowToast(
+                automatic ? "60 秒未复制，已自动结束" : "累积复制已结束",
+                "本次没有收集到文本，原剪贴板内容不变。");
         }
     }
 
@@ -152,6 +170,7 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
         }
 
         _items.Clear();
+        ResetInactivityCountdown();
         SetClipboardTextInternal(string.Empty);
         UpdateTrayState();
         ShowToast("已清空累计内容", "累积模式仍保持开启，可以继续 Ctrl+C。");
@@ -177,6 +196,7 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
 
     private void OpenSettings()
     {
+        var wasAutoFinishEnabled = _settings.AutoFinishAfterInactivity;
         using var form = new SettingsForm(_settings);
         if (form.ShowDialog() != DialogResult.OK)
             return;
@@ -185,7 +205,30 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
         _settings.Save();
         StartupManager.SetEnabled(_settings.AutoStart);
         _autoStartItem.Checked = _settings.AutoStart;
+        if (_collecting && !wasAutoFinishEnabled && _settings.AutoFinishAfterInactivity)
+            ResetInactivityCountdown();
+        UpdateInactivityTimer();
         ShowToast("设置已保存", "新设置已立即生效。");
+    }
+
+    private void ResetInactivityCountdown()
+    {
+        _lastCollectionActivityTick = Environment.TickCount64;
+    }
+
+    private void UpdateInactivityTimer()
+    {
+        _inactivityTimer.Enabled = _collecting && _settings.AutoFinishAfterInactivity;
+    }
+
+    private void CheckCollectionInactivity()
+    {
+        if (_collecting
+            && _settings.AutoFinishAfterInactivity
+            && Environment.TickCount64 - _lastCollectionActivityTick >= InactivityTimeoutMilliseconds)
+        {
+            FinishCollection(automatic: true);
+        }
     }
 
     private void ShowToast(string title, string text)
@@ -264,6 +307,7 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
     private void Exit()
     {
         _trayIcon.Visible = false;
+        _inactivityTimer.Stop();
         _keyboardHook.Dispose();
         _window.Dispose();
         _toast.Close();
@@ -275,6 +319,7 @@ internal sealed class ClipboardApplicationContext : ApplicationContext
         if (disposing)
         {
             _trayIcon.Dispose();
+            _inactivityTimer.Dispose();
             _keyboardHook.Dispose();
             _window.Dispose();
             _toast.Dispose();

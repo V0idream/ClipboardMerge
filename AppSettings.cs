@@ -10,6 +10,7 @@ internal sealed class AppSettings
     public int NotificationMilliseconds { get; set; } = 1000;
     public bool PlaySound { get; set; } = false;
     public bool AutoStart { get; set; } = true;
+    public bool AutoFinishAfterInactivity { get; set; } = true;
     public string Separator { get; set; } = "\r\n";
     public int PreviewLength { get; set; } = 4000;
 
